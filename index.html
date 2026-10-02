@@ -31,7 +31,15 @@
   <div id="yearScreen">
     <div class="year-inner">
       <h1>🌀 タイフーンドッジ</h1>
-      <p class="tagline">年を選んで、台風シーズンを生き延びろ。<br>日本列島をドラッグで動かし、台風の核心に触れなければOK。</p>
+      <p class="tagline">年を選んで（複数可）、台風シーズンを生き延びろ。<br>日本列島をドラッグで動かし、台風の核心に触れなければOK。<br>複数の年を選ぶと、シーズンが連続で襲ってくる！</p>
+      <div class="year-actions">
+        <span id="selSummary">年をタップして選択</span>
+        <div class="btns">
+          <button id="randomBtn" class="mini">おまかせ5年</button>
+          <button id="clearBtn" class="mini">解除</button>
+          <button id="startBtn" disabled>始める</button>
+        </div>
+      </div>
       <div id="yearInfo" class="year-info hidden"></div>
       <div id="yearGrid" class="year-grid"><p class="loading">データを読み込み中…</p></div>
       <p class="credit">データ: 気象庁ベストトラック / Natural Earth・world-atlas</p>

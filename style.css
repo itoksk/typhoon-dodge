@@ -54,7 +54,32 @@ button { font-family: inherit; cursor: pointer; }
 }
 .year-grid button small { display: block; font-size: 10px; font-weight: 400; color: #a9c2de; margin-top: 2px; }
 .year-grid button.named { border-color: var(--accent); background: rgba(255, 179, 0, 0.14); }
+.year-grid button.selected {
+  background: var(--accent); color: var(--navy); border-color: var(--accent);
+}
+.year-grid button.selected small { color: rgba(18, 35, 63, 0.75); }
 .year-grid button:active { transform: scale(0.96); }
+.year-actions {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: rgba(10, 28, 56, 0.95); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+#selSummary { font-size: 13px; color: #c9dcf2; }
+.year-actions .btns { display: flex; gap: 6px; }
+.year-actions button {
+  border: none; border-radius: 8px; font-weight: 700;
+}
+#startBtn {
+  background: var(--accent); color: var(--navy);
+  font-size: 15px; padding: 0 18px; height: 40px;
+}
+#startBtn:disabled { background: rgba(255, 255, 255, 0.15); color: #7e96b5; cursor: default; }
+.year-actions .mini {
+  background: rgba(255, 255, 255, 0.12); color: var(--ink);
+  font-size: 12px; padding: 0 10px; height: 40px;
+}
 .year-grid .loading { grid-column: 1 / -1; color: #a9c2de; }
 .credit { margin-top: 20px; font-size: 11px; color: #7e96b5; }
 .year-info {

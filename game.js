@@ -1,8 +1,9 @@
 'use strict';
 /* ============================================================
  * タイフーンドッジ
- * 年を選んで、その年の台風シーズン（気象庁ベストトラック実データ）
+ * 年（複数可）を選んで、台風シーズン（気象庁ベストトラック実データ）
  * を日本列島を動かして生き延びるゲーム。オリジナル実装（MIT）。
+ * 複数年選択時は年代順にシーズンが連続する。
  * ============================================================ */
 
 // ---------- 画面座標系（メルカトル） ----------
@@ -42,6 +43,7 @@ const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
 const hudEl = $('hud'), dateEl = $('date'), daysEl = $('days'), activeEl = $('active'), ffEl = $('ff');
 const yearScreen = $('yearScreen'), yearGrid = $('yearGrid'), yearInfo = $('yearInfo');
+const selSummary = $('selSummary'), startBtn = $('startBtn'), randomBtn = $('randomBtn'), clearBtn = $('clearBtn');
 const popup = $('popup'), ptitle = $('ptitle'), ptext = $('ptext');
 const pbtnMain = $('pbtnMain'), pbtnSub = $('pbtnSub'), sharebtn = $('sharebtn');
 const pad = $('pad'), knob = $('knob'), ticker = $('ticker');
@@ -52,13 +54,21 @@ let DPR = 1, SC = 1, TX = 0, TY = 0, VW = 0, VH = 0;
 let mapData = null, yearIndex = null;
 let landBodies = [];                    // 押しのけ可能な大陸
 let jpRings = [], jpVerts = [];         // 日本列島（ローカル座標 + 経緯度）
+const selected = new Set();             // 年選択画面で選ばれた年
 const G = {
   screen: 'boot',   // boot | year | play | over | clear
-  year: 0, storms: [], t: 0, tStart: 0, tEnd: 0,
+  segments: [],     // [{ year, storms, tStart, tEnd }]
+  segIdx: 0,
+  year: 0,          // 現在セグメントの年（表示用）
+  t: 0,
+  daysBefore: 0,    // 前セグメントまでの通算生存日数
   jp: { x: 0, y: 0 }, vx: 0, vy: 0,
-  hit: null, closestKm: Infinity, overAt: 0,
-  ff: false, lastTs: 0,
+  hit: null, closestKm: Infinity,
+  ff: false, lastTs: 0, activeCount: 0,
 };
+const seg = () => G.segments[G.segIdx];
+const totalStorms = () => G.segments.reduce((n, s) => n + s.storms.length, 0);
+const totalDays = () => G.daysBefore + Math.floor((G.t - seg().tStart) / 24) + 1;
 
 // ============================================================
 // データ読み込み
@@ -130,73 +140,127 @@ function buildYearGrid() {
   yearGrid.innerHTML = '';
   for (const y of yearIndex) {
     const b = document.createElement('button');
+    b.dataset.year = y.y;
     b.innerHTML = `${y.y}<small>${y.n}個${y.named.length ? ' ★' : ''}</small>`;
-    if (y.named.length) {
-      b.classList.add('named');
-      b.title = y.named.join('・');
-    }
-    b.onclick = () => startYear(y.y);
+    if (y.named.length) b.classList.add('named');
+    b.title = y.named.length ? y.named.join('・') : `${y.y}年: ${y.n}個`;
+    b.onclick = () => toggleYear(y.y, b);
+    b.ondblclick = () => { setSelection([y.y]); startSelected(); };
     yearGrid.appendChild(b);
   }
+  randomBtn.onclick = () => {
+    const pool = [...yearIndex];
+    const picks = new Set();
+    while (picks.size < Math.min(5, pool.length)) {
+      picks.add(pool[Math.floor(Math.random() * pool.length)].y);
+    }
+    setSelection([...picks]);
+  };
+  clearBtn.onclick = () => setSelection([]);
+  startBtn.onclick = startSelected;
+}
+
+function toggleYear(y, btn) {
+  selected.has(y) ? selected.delete(y) : selected.add(y);
+  btn.classList.toggle('selected', selected.has(y));
+  refreshSummary();
+}
+
+function setSelection(years) {
+  selected.clear();
+  for (const y of years) selected.add(y);
+  for (const b of yearGrid.children) {
+    b.classList.toggle('selected', selected.has(+b.dataset.year));
+  }
+  refreshSummary();
+}
+
+function refreshSummary() {
+  const n = selected.size;
+  if (!n) {
+    selSummary.textContent = '年をタップして選択（複数可）';
+  } else {
+    const storms = [...selected].reduce((s, y) => s + (yearIndex.find(v => v.y === y)?.n || 0), 0);
+    selSummary.textContent = `${n}年選択中・台風計${storms}個`;
+  }
+  startBtn.disabled = !n;
+}
+
+function startSelected() {
+  if (!selected.size) return;
+  startYears([...selected].sort((a, b) => a - b));
 }
 
 // ============================================================
 // ゲーム開始・終了
 // ============================================================
-async function startYear(year) {
+async function startYears(years) {
   yearInfo.classList.remove('hidden');
-  yearInfo.textContent = `${year}年のデータを読み込み中…`;
-  let data;
+  yearInfo.textContent = `${years.length}年分のデータを読み込み中…`;
+  let datas;
   try {
-    data = await fetch(`data/tracks/${year}.json`).then(r => r.json());
+    datas = await Promise.all(years.map(y => fetch(`data/tracks/${y}.json`).then(r => r.json())));
   } catch (e) {
     yearInfo.textContent = '読み込みに失敗しました。別の年を選んでください。';
     return;
   }
   for (const b of landBodies) { b.ox = b.oy = b.vx = b.vy = 0; }
-  G.year = year;
-  G.storms = data.storms;
-  const t0 = Math.min(...data.storms.map(s => s.pts[0][0]));
-  const t1 = Math.max(...data.storms.map(s => s.pts[s.pts.length - 1][0]));
-  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  G.t = Math.max(0, t0 - 72);
-  G.tStart = G.t;
-  G.tEnd = Math.min(t1 + 24, (leap ? 8784 : 8760) - 1);
+  G.segments = datas.map(d => {
+    const t0 = Math.min(...d.storms.map(s => s.pts[0][0]));
+    const t1 = Math.max(...d.storms.map(s => s.pts[s.pts.length - 1][0]));
+    const leap = (d.year % 4 === 0 && d.year % 100 !== 0) || d.year % 400 === 0;
+    for (const s of d.storms) { s._gen = false; s._gone = false; }
+    return { year: d.year, storms: d.storms, tStart: Math.max(0, t0 - 72), tEnd: Math.min(t1 + 24, (leap ? 8784 : 8760) - 1) };
+  });
+  G.segIdx = 0;
+  G.year = seg().year;
+  G.t = seg().tStart;
+  G.daysBefore = 0;
   G.jp = { x: X(JP_HOME.lon), y: Y(JP_HOME.lat) };
   G.vx = G.vy = 0;
   G.hit = null; G.closestKm = Infinity;
   G.ff = false;
-  for (const s of G.storms) { s._gen = false; s._gone = false; }
   ticker.innerHTML = ''; updateRows();
   yearScreen.classList.add('hidden');
   popup.classList.add('hidden');
   hudEl.classList.remove('hidden');
   pad.classList.remove('hidden');
   G.screen = 'play';
-  const named = data.storms.filter(s => s.jp).map(s => s.jp);
-  news(`${year}年の台風シーズンが始まります（対象 ${data.storms.length} 個）`, 'blue', '開始');
+  const yearsText = years.length === 1 ? `${years[0]}年` : `${years[0]}年〜${years[years.length - 1]}年（${years.length}シーズン）`;
+  news(`${yearsText}の台風シーズンが始まります（台風計${totalStorms()}個）`, 'blue', '開始');
+  const named = seg().storms.filter(s => s.jp).map(s => s.jp);
   if (named.length) news(`この年には「${named.join('」「')}」が記録されています`, 'yellow', '注目');
 }
 
-function gameOver(storm, pos, vert) {
+function advanceSegment() {
+  G.daysBefore += Math.round((seg().tEnd - seg().tStart) / 24);
+  G.segIdx++;
+  G.year = seg().year;
+  G.t = seg().tStart;
+  news(`${G.year}年のシーズンに突入します（${G.segIdx + 1}/${G.segments.length}年目）`, 'blue', '年代');
+  const named = seg().storms.filter(s => s.jp).map(s => s.jp);
+  if (named.length) news(`この年には「${named.join('」「')}」が記録されています`, 'yellow', '注目');
+}
+
+function gameOver(storm, vert) {
   G.screen = 'over';
   G.hit = { storm, region: regionOf(vert[2], vert[3]) };
-  G.overAt = performance.now();
   releaseStick();
-  news(`台風${storm.num}号が${G.hit.region}に上陸しました`, 'red', '上陸');
+  news(`${G.year}年 台風${storm.num}号が${G.hit.region}に上陸しました`, 'red', '上陸');
   setTimeout(showOverPopup, 1400);
 }
 
 function clearGame() {
   G.screen = 'clear';
   releaseStick();
+  const multi = G.segments.length > 1;
   showPopup(
-    `${G.year}年 クリア！`,
-    `台風シーズンを生き延びました。\n` +
-    `対象台風: ${G.storms.length}個\n` +
-    `最接近: ${G.closestKm === Infinity ? '---' : Math.max(0, Math.round(G.closestKm)) + 'km'}\n` +
-    `${G.storms.some(s => s.jp) ? '命名台風の年を制覇！' : ''}`,
-    'もう一度遊ぶ', () => startYear(G.year), true
+    multi ? `${G.segments.length}シーズン制覇！` : `${G.year}年 クリア！`,
+    `${multi ? `${G.segments.length}年分の` : ''}台風シーズンを生き延びました。\n` +
+    `台風計: ${totalStorms()}個\n` +
+    `生存日数: 約${totalDays()}日\n` +
+    `最接近: ${G.closestKm === Infinity ? '---' : Math.max(0, Math.round(G.closestKm)) + 'km'}`,
+    'もう一度遊ぶ', () => startYears(G.segments.map(s => s.year)), true
   );
 }
 
@@ -204,11 +268,13 @@ function showOverPopup() {
   if (G.screen !== 'over') return;
   const s = G.hit.storm;
   const name = s.jp ? `${s.jp}（${s.name || ''}）` : (s.name ? `（${s.name}）` : '');
+  const multi = G.segments.length > 1;
   showPopup(
     fmtDate(G.t),
-    `台風${s.num}号${name}が\n${G.hit.region}に上陸しました。\n` +
-    `記録: ${Math.floor((G.t - G.tStart) / 24) + 1}日間生存 / 全${G.storms.length}個中${G.storms.filter(x => x._gen).length}個が発生済み`,
-    'もう一度挑戦', () => startYear(G.year), true
+    `${G.year}年 台風${s.num}号${name}が\n${G.hit.region}に上陸しました。\n` +
+    (multi ? `${G.segments.length}シーズン中 ${G.segIdx + 1} 年目で力尽きる。\n` : '') +
+    `記録: 約${totalDays()}日間生存`,
+    'もう一度挑戦', () => startYears(G.segments.map(s => s.year)), true
   );
 }
 
@@ -268,9 +334,10 @@ function regionOf(lon, lat) {
 // 更新
 // ============================================================
 function update(dt) {
+  const S = seg();
   // --- 時間進行（いない期間は早送り） ---
   let anyActive = false, nextGen = Infinity;
-  for (const s of G.storms) {
+  for (const s of S.storms) {
     const t0 = s.pts[0][0], t1 = s.pts[s.pts.length - 1][0];
     if (G.t >= t0 && G.t <= t1) anyActive = true;
     if (t0 > G.t && t0 < nextGen) nextGen = t0;
@@ -278,7 +345,10 @@ function update(dt) {
   G.ff = !anyActive && (nextGen - G.t > FF_GAP);
   G.t += HOURS_PER_SEC * (G.ff ? FF_MULT : 1) * dt;
 
-  if (G.t >= G.tEnd) { clearGame(); return; }
+  if (G.t >= S.tEnd) {
+    if (G.segIdx < G.segments.length - 1) { advanceSegment(); return; }
+    clearGame(); return;
+  }
 
   // --- 日本列島の移動 ---
   G.jp.x = Math.max(24, Math.min(W - 24, G.jp.x + G.vx * JAPAN_SPEED * dt));
@@ -289,7 +359,7 @@ function update(dt) {
 
   // --- イベント＆衝突 ---
   let activeCount = 0;
-  for (const s of G.storms) {
+  for (const s of S.storms) {
     const t0 = s.pts[0][0], t1 = s.pts[s.pts.length - 1][0];
     if (!s._gen && G.t >= t0) {
       s._gen = true;
@@ -309,9 +379,9 @@ function update(dt) {
     for (const v of jpVerts) {
       const dx = G.jp.x + v[0] - sx, dy = G.jp.y + v[1] - sy;
       const d = Math.hypot(dx, dy);
-      const gapKm = d / pxPerKm(pos.lat) - core / pxPerKm(pos.lat);
+      const gapKm = (d - core) / pxPerKm(pos.lat);
       if (gapKm < G.closestKm) G.closestKm = gapKm;
-      if (d < core) { gameOver(s, pos, v); return; }
+      if (d < core) { gameOver(s, v); return; }
     }
   }
   G.activeCount = activeCount;
@@ -388,7 +458,7 @@ function draw() {
 
   // 台風
   if (G.screen === 'play' || G.screen === 'over') {
-    for (const s of G.storms) drawStorm(s);
+    for (const s of seg().storms) drawStorm(s);
   }
   ctx.restore();
 }
@@ -464,11 +534,9 @@ function loop(ts) {
   G.lastTs = ts;
   if (G.screen === 'play') {
     update(dt);
-    updateHud();
+    if (G.screen === 'play') updateHud();
   } else if (G.screen === 'over') {
-    // ヒット後はスローで時間を流す
-    for (const s of G.storms) { /* 位置はposAtが時刻から決まるので時刻だけ進める */ }
-    G.t += HOURS_PER_SEC * 0.25 * dt;
+    G.t += HOURS_PER_SEC * 0.25 * dt;   // ヒット後はスロー進行
     slideLand(dt);
   }
   draw();
@@ -477,7 +545,8 @@ function loop(ts) {
 
 function updateHud() {
   dateEl.textContent = fmtDate(G.t);
-  daysEl.textContent = `${Math.floor((G.t - G.tStart) / 24) + 1}日目`;
+  const multi = G.segments.length > 1;
+  daysEl.textContent = `${totalDays()}日目${multi ? `（${G.segIdx + 1}/${G.segments.length}年目）` : ''}`;
   activeEl.textContent = `台風 ${G.activeCount || 0}個`;
   ffEl.classList.toggle('hidden', !G.ff);
   document.documentElement.style.setProperty('--rows', ticker.children.length);
@@ -566,14 +635,18 @@ window.addEventListener('keyup', e => { keys[e.key] = false; keyVel(); });
 // 共有・メニュー・リサイズ
 // ============================================================
 sharebtn.onclick = () => {
-  const days = Math.floor((G.t - G.tStart) / 24) + 1;
+  const days = totalDays();
+  const multi = G.segments.length > 1;
+  const yearsText = multi
+    ? `${G.segments[0].year}年〜${G.segments[G.segments.length - 1].year}年の${G.segments.length}シーズン`
+    : `${G.year}年の台風シーズン`;
   let text;
   if (G.screen === 'clear') {
-    text = `【タイフーンドッジ】${G.year}年の台風シーズン（全${G.storms.length}個）を生き延びました！最接近 ${Math.max(0, Math.round(G.closestKm))}km`;
+    text = `【タイフーンドッジ】${yearsText}（台風計${totalStorms()}個）を生き延びました！最接近 ${Math.max(0, Math.round(G.closestKm))}km`;
   } else if (G.hit) {
     const s = G.hit.storm;
     const nm = s.jp ? `（${s.jp}）` : (s.name ? `（${s.name}）` : '');
-    text = `【タイフーンドッジ】${G.year}年${fmtDate(G.t).replace(`${G.year}年`, '')}、台風${s.num}号${nm}が${G.hit.region}に上陸。${days}日間生き延びました。`;
+    text = `【タイフーンドッジ】${yearsText}に挑戦！${G.year}年、台風${s.num}号${nm}が${G.hit.region}に上陸。約${days}日間生き延びました。`;
   } else return;
   text += `\n\n#タイフーンドッジ\n${location.href}`;
   window.open('https://x.com/intent/post?text=' + encodeURIComponent(text), '_blank');
