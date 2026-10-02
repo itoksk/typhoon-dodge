@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>タイフーンドッジ | 年を選んで台風から逃げきれ</title>
+<meta name="description" content="気象庁の実データで再現した台風シーズン。日本列島を動かして、選んだ年の台風から逃げ切るブラウザゲーム。">
+<meta property="og:title" content="タイフーンドッジ">
+<meta property="og:description" content="年を選んで、台風から逃げきれ。1951年からの実データで遊ぶ台風回避ゲーム。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌀</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div id="date">----年-月-日</div>
+      <div id="ff" class="hidden">⏩ 早送り中</div>
+    </div>
+    <div class="hud-right">
+      <div id="days">0日目</div>
+      <div id="active">台風 0個</div>
+    </div>
+  </div>
+
+  <!-- 年選択 -->
+  <div id="yearScreen">
+    <div class="year-inner">
+      <h1>🌀 タイフーンドッジ</h1>
+      <p class="tagline">年を選んで、台風シーズンを生き延びろ。<br>日本列島をドラッグで動かし、台風の核心に触れなければOK。</p>
+      <div id="yearInfo" class="year-info hidden"></div>
+      <div id="yearGrid" class="year-grid"><p class="loading">データを読み込み中…</p></div>
+      <p class="credit">データ: 気象庁ベストトラック / Natural Earth・world-atlas</p>
+    </div>
+  </div>
+
+  <!-- ポップアップ -->
+  <div id="popup" class="hidden">
+    <h1 id="ptitle"></h1>
+    <p id="ptext"></p>
+    <button id="pbtnMain"></button>
+    <button id="pbtnSub" class="ghost"></button>
+    <button id="sharebtn" class="ghost hidden">𝕏 でシェア</button>
+  </div>
+
+  <!-- 仮想スティック -->
+  <div id="pad" class="hidden"><div id="knob"></div></div>
+
+  <!-- ニュースティッカー -->
+  <div id="ticker"></div>
+
+  <!-- メニュー -->
+  <button id="menubtn" aria-label="メニュー">☰</button>
+  <div id="menu">
+    <button id="menuclose" aria-label="閉じる">×</button>
+    <h2>タイフーンドッジ</h2>
+    <h3>遊び方</h3>
+    <p>選んだ年の台風シーズンが実データで再現されます。ドラッグ（または矢印キー・WASD）で日本列島を動かし、台風の赤い核心に触れないように逃げてください。最後の台風が去ればクリアです。破線は24時間先までの予報円です。</p>
+    <h3>使用データ・ライセンス</h3>
+    <p>台風経路: 気象庁 RSMC Tokyo「ベストトラック」データ（出典: 気象庁）。台風の名称・番号も気象庁公表情報に基づきます。</p>
+    <p>地図: Natural Earth（パブリックドメイン）を world-atlas で TopoJSON 化したものを使用。</p>
+    <pre>world-atlas
+Copyright 2013-2019 Michael Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.</pre>
+    <p>ゲームのコード自体は MIT License のオリジナル実装です。</p>
+    <button id="menuYearBtn" class="ghost">年を選び直す</button>
+  </div>
+
+  <button id="mute" class="hidden"></button>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
